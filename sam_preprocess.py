@@ -3,29 +3,16 @@ import cv2
 import torch
 import argparse
 import numpy as np
-from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
-from utils.sam_utils import create, seed_everything,save_gpt_input
+from utils.sam_utils import create, seed_everything, save_gpt_input
 
-
-
-
-def sam_image(sam, base_path):
-
-    mask_generator = SamAutomaticMaskGenerator(
-        model=sam,
-        points_per_side=32,
-        pred_iou_thresh=0.7,
-        box_nms_thresh=0.7,
-        stability_score_thresh=0.85,
-        crop_n_layers=1,
-        crop_n_points_downscale_factor=1,
-        min_mask_region_area=300,
-    )
-
+def sam_image(mask_generator, base_path):
     # Process each dataset
     for dataset_id in os.listdir(base_path):
         dataset_path = os.path.join(base_path, dataset_id)
         img_folder = os.path.join(dataset_path, 'images')
+
+        if not os.path.exists(img_folder):
+            continue
 
         data_list = sorted(os.listdir(img_folder))
 
@@ -35,7 +22,11 @@ def sam_image(sam, base_path):
         for data_path in data_list:
             image_path = os.path.join(img_folder, data_path)
             image_rgba = cv2.imread(image_path, cv2.IMREAD_UNCHANGED).astype(np.uint8)
-            alpha = image_rgba[:, :, 3]
+            
+            if image_rgba.shape[2] == 4:
+                alpha = image_rgba[:, :, 3]
+            else:
+                alpha = np.ones(image_rgba.shape[:2], dtype=np.uint8) * 255
 
             # Ensure alpha mask is binary
             alpha[alpha < 125] = 0
@@ -60,21 +51,77 @@ def sam_image(sam, base_path):
     
     return seg_map_vis
 
-
-
 if __name__ == '__main__':
     seed_everything(42)
 
     parser = argparse.ArgumentParser(description = "Part-level Segmentation using SAM")
     parser.add_argument('--dataset_path', type=str, default="gp_cases_dirs")
     parser.add_argument('--sam_ckpt_path', type=str, default="./sam_vit_h_4b8939.pth")
+    parser.add_argument('--model_type', type=str, default="vit_h", help="vit_h, vit_b, sam2")
+    parser.add_argument('--model_cfg', type=str, default="sam2_hiera_l.yaml", help="Config for SAM2")
     args = parser.parse_args()
     torch.set_default_dtype(torch.float32)
 
     base_path = args.dataset_path
     sam_ckpt_path = args.sam_ckpt_path
-    sam = sam_model_registry["vit_h"](checkpoint=sam_ckpt_path).to('cuda')
-    sam_image(sam, base_path)
+    
+    if args.model_type == "sam2":
+        try:
+            from sam2.build_sam import build_sam2
+            from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
+            from hydra.utils import instantiate
+            from omegaconf import OmegaConf
+            
+            print(f"Loading SAM2 model from {sam_ckpt_path}...")
+            
+            # Custom build logic to handle local config files reliably
+            if os.path.exists(args.model_cfg):
+                print(f"Using local config file: {args.model_cfg}")
+                cfg = OmegaConf.load(args.model_cfg)
+                sam_model = instantiate(cfg.model, _recursive_=True)
+                
+                # Load checkpoint
+                if sam_ckpt_path:
+                    sd = torch.load(sam_ckpt_path, map_location="cpu")["model"]
+                    sam_model.load_state_dict(sd)
+                
+                sam_model = sam_model.to('cuda')
+                sam_model.eval()
+            else:
+                # Fallback to library function
+                sam_model = build_sam2(args.model_cfg, sam_ckpt_path, device='cuda', apply_postprocessing=False)
+
+            mask_generator = SAM2AutomaticMaskGenerator(
+                model=sam_model,
+                points_per_side=32,
+                pred_iou_thresh=0.8,
+                stability_score_thresh=0.92,
+                box_nms_thresh=0.7,
+                min_mask_region_area=300,
+            )
+        except ImportError as e:
+            print(f"Error: SAM2 not installed or configured correctly. {e}")
+            exit(1)
+        except Exception as e:
+            print(f"Error loading SAM2: {e}")
+            exit(1)
+    else:
+        from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
+        
+        print(f"Loading SAM1 ({args.model_type}) model from {sam_ckpt_path}...")
+        sam_model = sam_model_registry[args.model_type](checkpoint=sam_ckpt_path).to('cuda')
+        mask_generator = SamAutomaticMaskGenerator(
+            model=sam_model,
+            points_per_side=32,
+            pred_iou_thresh=0.7,
+            box_nms_thresh=0.7,
+            stability_score_thresh=0.85,
+            crop_n_layers=1,
+            crop_n_points_downscale_factor=1,
+            min_mask_region_area=300,
+        )
+
+    sam_image(mask_generator, base_path)
     save_gpt_input(base_path)
 
     

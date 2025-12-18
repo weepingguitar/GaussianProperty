@@ -5,4 +5,5 @@ Results_*/
 gradio_demo/
 gp_cases_dirs/
 .DS_Store
+*.pt
 

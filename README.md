@@ -107,3 +107,37 @@ We thank the authors of the following projects for their excellent contributions
 - [LangSplat](https://github.com/minghanqin/LangSplat)
 
 
+
+# env
+
+# 1. Create new env
+```
+conda create -n sam2 python=3.10 -y
+conda activate sam2
+```
+
+# 2. Install PyTorch (CUDA 11.8 or 12.1 recommended)
+```
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
+# 3. Install SAM 2
+```
+pip install git+https://github.com/facebookresearch/sam2.git
+```
+download sam2 model https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt
+
+# 4. Other
+```
+pip install opencv-python matplotlib rembg gradio tqdm openai
+```
+
+# new command
+use sam2
+```
+python sam_preprocess.py --model_type sam2 --sam_ckpt_path sam2_hiera_large.pt --model_cfg sam2_hiera_l.yaml
+```
+use default
+```
+python sam_preprocess.py --model_type vit_h --sam_ckpt_path sam_vit_h_4b8939.pth
+```

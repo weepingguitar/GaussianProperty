@@ -181,7 +181,18 @@ def sam_encoder(image, alpha, save_path, mask_generator):
     os.makedirs(os.path.join(vis_seg_path, "part"), exist_ok=True)
 
     image = cv2.cvtColor(image[0].permute(1, 2, 0).numpy().astype(np.uint8), cv2.COLOR_BGR2RGB)
-    masks_default, masks_s, masks_m, masks_l = mask_generator.generate(image)
+    
+    # Generate masks
+    masks_output = mask_generator.generate(image)
+
+    # Handle different SAM versions/outputs
+    if isinstance(masks_output, tuple) and len(masks_output) == 4:
+        # Legacy/Custom SAM returning 4 values
+        masks_default, masks_s, masks_m, masks_l = masks_output
+    else:
+        # Standard SAM 1 / SAM 2 returning a single list
+        masks_m = masks_output
+
     masks_m = masks_update(masks_m, iou_thr=0.8, score_thr=0.7, inner_thr=0.5)[0]
 
     seg_map = -np.ones(image.shape[:2], dtype=np.int32)
