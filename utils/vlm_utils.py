@@ -15,7 +15,7 @@ def Qwen(image_path, prompt):
     base64_image = encode_image(image_path)
     client = OpenAI(
         # If the environment variable is not configured, replace the line below with your API Key: api_key="sk-xxx"
-        api_key='your_api_key',
+        api_key='sk-6ef267af2c014abbbb8b1c9eabbc127b',
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
     completion = client.chat.completions.create(
@@ -84,7 +84,7 @@ def get_image_files(directory):
             img_path = os.path.join(now_path, png)
             image_files.append(img_path)
 
-    image_files = sorted(image_files, key=lambda x: (x.split('/')[3], x.split('/')[4]))
+    image_files = sorted(image_files, key=lambda x: (os.path.basename(os.path.dirname(x)), os.path.basename(x)))
 
     return image_files
 

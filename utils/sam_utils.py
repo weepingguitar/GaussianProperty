@@ -1,6 +1,5 @@
 import os
 import cv2
-import torch
 import random
 import numpy as np
 from tqdm import tqdm
@@ -29,6 +28,7 @@ def resize_image(image, max_size=1280):
 
 def seed_everything(seed_value):
     """Seeds all random number generators for reproducibility."""
+    import torch
     random.seed(seed_value)
     np.random.seed(seed_value)
     torch.manual_seed(seed_value)
@@ -77,14 +77,16 @@ def pad_img(img):
     return pad
 
 
-def filter(keep: torch.Tensor, masks_result) -> list:
+def filter(keep, masks_result) -> list:
     """Filters masks based on the indices in `keep`."""
+    import torch
     keep = keep.int().cpu().numpy()
     return [m for i, m in enumerate(masks_result) if i in keep]
 
 
 def mask_nms(masks, scores, iou_thr=0.7, score_thr=0.1, inner_thr=0.2):
     """Performs non-maximum suppression on masks."""
+    import torch
     scores, idx = scores.sort(0, descending=True)
     num_masks = idx.shape[0]
 
@@ -137,6 +139,7 @@ def mask_nms(masks, scores, iou_thr=0.7, score_thr=0.1, inner_thr=0.2):
 
 def masks_update(*args, **kwargs):
     """Removes redundant masks based on scores and overlap rate."""
+    import torch
     masks_new = ()
     for masks_lvl in (args):
         seg_pred =  torch.from_numpy(np.stack([m['segmentation'] for m in masks_lvl], axis=0))

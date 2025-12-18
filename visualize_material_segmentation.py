@@ -13,12 +13,12 @@ def vis_material_seg(base_path, vis_seg_save_base):
     for path in case_list:
         case_name = os.path.join(base_path, path)
 
-        case_name_last = case_name.split("/")[-1]
-        image_base = f"{case_name}/images"
-        feature_base = f"{case_name}/seg"
+        case_name_last = path
+        image_base = os.path.join(case_name, "images")
+        feature_base = os.path.join(case_name, "seg")
         number_view = len(os.listdir(image_base))
 
-        gpt_txt = os.path.join(base_path, path, f"{case_name_last}.txt")
+        gpt_txt = os.path.join(case_name, f"{case_name_last}.txt")
         parsed_data = parse_txt_file(gpt_txt)
 
         result_vis_seg_base = os.path.join(vis_seg_save_base, case_name_last)
@@ -52,7 +52,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     base_path = args.dataset_path
-    vis_seg_save_base = "./Results_" + base_path.split("/")[-1]
+    vis_seg_save_base = "./Results_" + os.path.basename(os.path.normpath(base_path))
     vis_material_seg(base_path, vis_seg_save_base)
 
 

@@ -27,7 +27,7 @@ def parse_txt_file(file_path):
                 if len(parts) == 5:
                     file_path, description, material, hardness, AD_type = parts
                     # Extract 00 and 01 from the file path
-                    path_parts = file_path.split('/')
+                    path_parts = file_path.replace('\\', '/').split('/')
                     image_number = path_parts[-2]
                     part_number = path_parts[-1]
                     parsed_data.append({

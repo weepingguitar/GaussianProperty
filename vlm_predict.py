@@ -33,8 +33,10 @@ def query_vlm(base_path, case_name, vlm_type = "qwen"):
                 else:
                     message = str(GPT4V(image_file, prompt))
             except KeyError as e:
+                print(f"KeyError processing {image_file}: {e}")
                 message = "error,-1"
             except Exception as e:
+                print(f"Error processing {image_file}: {e}")
                 message = "error,-1"
             write_msg = image_file + "," + message
             case_msg += case_msg
