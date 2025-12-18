@@ -1,8 +1,13 @@
 import os
 import argparse
 from PIL import Image
-from rembg import remove
 from utils.sam_utils import resize_image
+
+# 使用 rembg 的 isnet-general-use 模型（最稳定强大）
+from rembg import remove, new_session
+
+print("Loading isnet-general-use model (best rembg model)...")
+rmbg_session = new_session("isnet-general-use")
 
 
 def process_images(remove_bg):
@@ -20,8 +25,8 @@ def process_images(remove_bg):
 
         with Image.open(image_path) as img_pil:
             if remove_bg:
-                # Use Rembg to remove the background and get the mask
-                img_pil = remove(img_pil)
+                # 使用 isnet-general-use 模型去除背景
+                img_pil = remove(img_pil, session=rmbg_session)
             img_pil = resize_image(img_pil, 1280)
 
             # Save the processed image

@@ -7,6 +7,9 @@ from PIL import Image
 from matplotlib.colors import ListedColormap
 import matplotlib.pyplot as plt
 
+# Toggle to enable/disable post-filtering/merging of masks
+MASK_FILTER_ENABLED = False
+
 def resize_image(image, max_size=1280):
     # Get the current size of the image
     width, height = image.size
@@ -174,11 +177,59 @@ def vis_segmap_sam(seg_map, debug_vis_path):
     return vis_mask[:, :, [2, 1, 0]]
 
 
+def is_valid_mask(mask_data):
+    """
+    Advanced filtering for SAM masks to remove noise.
+    Checks: Area, Stability Score, Predicted IoU, and Shape Solidity.
+    """
+    # 1. Area Threshold (increased)
+    if mask_data['area'] < 500:
+        return False
+
+    # 2. Stability Score (SAM metric for mask consistency)
+    # Higher threshold ensures we only keep very stable masks
+    if mask_data.get('stability_score', 1.0) < 0.88:
+        return False
+
+    # 3. Predicted IoU (SAM confidence)
+    if mask_data.get('predicted_iou', 1.0) < 0.85:
+        return False
+
+    # 4. Shape Analysis: Solidity
+    # Solidity = Contour Area / Convex Hull Area
+    # Noise tends to be jagged, irregular, or stringy (low solidity).
+    # Real object parts tend to be more convex/solid.
+    mask_uint8 = mask_data['segmentation'].astype(np.uint8)
+    contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours: return False
+    
+    cnt = max(contours, key=cv2.contourArea)
+    hull = cv2.convexHull(cnt)
+    hull_area = cv2.contourArea(hull)
+    
+    if hull_area > 0:
+        solidity = float(mask_data['area']) / hull_area
+        if solidity < 0.6: # Filter out very jagged/irregular shapes
+            return False
+            
+    return True
+
+
 def sam_encoder(image, alpha, save_path, mask_generator):
     """Encodes the image and generates segmentation maps."""
     vis_seg_path = save_path.replace("seg", "vis_seg")
+
+    # Clean previous artifacts so stale masks don't persist between runs
+    part_dir = os.path.join(vis_seg_path, "part")
+    if os.path.exists(part_dir):
+        for f in os.listdir(part_dir):
+            try:
+                os.remove(os.path.join(part_dir, f))
+            except OSError:
+                pass
+    else:
+        os.makedirs(part_dir, exist_ok=True)
     os.makedirs(vis_seg_path, exist_ok=True)
-    os.makedirs(os.path.join(vis_seg_path, "part"), exist_ok=True)
 
     image = cv2.cvtColor(image[0].permute(1, 2, 0).numpy().astype(np.uint8), cv2.COLOR_BGR2RGB)
     
@@ -201,11 +252,85 @@ def sam_encoder(image, alpha, save_path, mask_generator):
     masks_m = sorted(masks_m, key=lambda x: x['area'], reverse=True)
 
     for kk, mask in enumerate(masks_m):
-        if kk == 0 or mask['segmentation'].sum() < 300:
+        if kk == 0: # Skip the largest mask (usually background)
             continue
+            
+        if MASK_FILTER_ENABLED:
+            # Apply advanced filtering
+            if not is_valid_mask(mask):
+                continue
+        # When disabled, accept all masks
         seg_map[mask['segmentation']] = kk
 
     seg_map[alpha == 0] = -1
+
+    if MASK_FILTER_ENABLED:
+        # --- CLEANUP: Merge small noise from Label 0 into nearest neighbors ---
+        label_0_mask = (seg_map == 0).astype(np.uint8)
+        num_labels, labels_im, stats, centroids = cv2.connectedComponentsWithStats(label_0_mask, connectivity=8)
+        seg_map_refined = seg_map.copy()
+        for i in range(1, num_labels):
+            if stats[i, cv2.CC_STAT_AREA] < 300:
+                component_mask = (labels_im == i).astype(np.uint8)
+                kernel = np.ones((3,3), np.uint8)
+                dilated_mask = cv2.dilate(component_mask, kernel, iterations=1)
+                boundary_mask = dilated_mask - component_mask
+                neighbor_labels = seg_map[boundary_mask == 1]
+                valid_neighbors = neighbor_labels[(neighbor_labels != -1) & (neighbor_labels != 0)]
+                if len(valid_neighbors) > 0:
+                    counts = np.bincount(valid_neighbors)
+                    most_frequent_label = np.argmax(counts)
+                    seg_map_refined[labels_im == i] = most_frequent_label
+                else:
+                    seg_map_refined[labels_im == i] = -1
+        seg_map = seg_map_refined
+
+        # --- CLEANUP STEP 2: Filter Label 0 (Remainder) for Shape Quality ---
+        label_0_mask = (seg_map == 0).astype(np.uint8)
+        num_labels, labels_im, stats, centroids = cv2.connectedComponentsWithStats(label_0_mask, connectivity=8)
+        for i in range(1, num_labels):
+            component_mask = (labels_im == i).astype(np.uint8)
+            contours, _ = cv2.findContours(component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if contours:
+                cnt = max(contours, key=cv2.contourArea)
+                hull = cv2.convexHull(cnt)
+                hull_area = cv2.contourArea(hull)
+                contour_area = cv2.contourArea(cnt)
+                if hull_area > 0:
+                    solidity = contour_area / hull_area
+                    if solidity < 0.2:
+                        component_mask = (labels_im == i).astype(np.uint8)
+                        kernel = np.ones((3,3), np.uint8)
+                        dilated_mask = cv2.dilate(component_mask, kernel, iterations=1)
+                        boundary_mask = dilated_mask - component_mask
+                        neighbor_labels = seg_map[boundary_mask == 1]
+                        valid_neighbors = neighbor_labels[(neighbor_labels != -1) & (neighbor_labels != 0)]
+                        if len(valid_neighbors) > 0:
+                            counts = np.bincount(valid_neighbors)
+                            most_frequent_label = np.argmax(counts)
+                            seg_map[labels_im == i] = most_frequent_label
+                        else:
+                            seg_map[labels_im == i] = -1
+
+        # --- FINAL SAFETY CHECK: Merge any label (including 0) that is too small ---
+        unique_labels = np.unique(seg_map)
+        for label in unique_labels:
+            if label == -1:
+                continue
+            if np.sum(seg_map == label) < 500:
+                component_mask = (seg_map == label).astype(np.uint8)
+                kernel = np.ones((3,3), np.uint8)
+                dilated_mask = cv2.dilate(component_mask, kernel, iterations=1)
+                boundary_mask = dilated_mask - component_mask
+                neighbor_labels = seg_map[boundary_mask == 1]
+                valid_neighbors = neighbor_labels[(neighbor_labels != -1) & (neighbor_labels != label)]
+                if len(valid_neighbors) > 0:
+                    counts = np.bincount(valid_neighbors)
+                    most_frequent_label = np.argmax(counts)
+                    seg_map[seg_map == label] = most_frequent_label
+                else:
+                    seg_map[seg_map == label] = -1
+
     seg_map_vis = vis_segmap_sam(seg_map, vis_seg_path)
 
     for i in np.unique(seg_map):
@@ -260,7 +385,15 @@ def save_gpt_input(base_path):
             cmap = ListedColormap([colors[label] for label in labels])
 
             for label in labels:
-                part_image = cv2.imread(os.path.join(seg_path, f"mask_{label}.png"))
+                # Filter out small masks to avoid sending noise to VLM
+                if np.sum(mask == label) < 300:
+                    continue
+
+                part_image_path = os.path.join(seg_path, f"mask_{label}.png")
+                if not os.path.exists(part_image_path):
+                    continue
+                    
+                part_image = cv2.imread(part_image_path)
                 part_image = cv2.cvtColor(part_image, cv2.COLOR_BGR2RGB)
 
                 # Create plot
