@@ -140,12 +140,32 @@ def GPT4V(image_path, prompt):
 
 def get_image_files(directory):
     image_files = []
-    # Iterate over the directory
-    for i in range(1, 2):  # Modify range if more folders need to be processed
-        sub_path = str(i).zfill(2)
-        now_path = os.path.join(directory, sub_path)
-        all_png = os.listdir(now_path)
-        for png in all_png:
+
+    # Original code only processed folder "01":
+    # for i in range(1, 2):
+    #     sub_path = str(i).zfill(2)
+    #     ...
+    #
+    # New behavior: iterate all subfolders under gpt_input (each is a view like 01/02/...).
+    if not os.path.exists(directory):
+        return []
+    subfolders = [
+        d
+        for d in os.listdir(directory)
+        if os.path.isdir(os.path.join(directory, d))
+    ]
+    # Prefer numeric 2-digit folders, but keep a fallback for any folder names.
+    def _key(x: str):
+        try:
+            return (0, int(x))
+        except ValueError:
+            return (1, x)
+
+    for sub in sorted(subfolders, key=_key):
+        now_path = os.path.join(directory, sub)
+        for png in os.listdir(now_path):
+            if not png.lower().endswith((".png", ".jpg", ".jpeg")):
+                continue
             img_path = os.path.join(now_path, png)
             image_files.append(img_path)
 

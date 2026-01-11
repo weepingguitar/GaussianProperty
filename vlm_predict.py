@@ -109,7 +109,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=" ")
     parser.add_argument('--vlm', type=str, default="qwen", help="gpt, qwen")
     parser.add_argument('--dataset_path', type=str, default="gp_cases_dirs")
+    parser.add_argument('--case_name', type=str, default="", help="If set, only process this subfolder under dataset_path")
     args = parser.parse_args()
     # run_vlm(args.dataset_path, args.vlm)
-    asyncio.run(run_vlm_async(args.dataset_path, args.vlm))
+    if args.case_name:
+        asyncio.run(query_vlm_async(args.dataset_path, args.case_name, vlm_type=args.vlm))
+    else:
+        asyncio.run(run_vlm_async(args.dataset_path, args.vlm))
 

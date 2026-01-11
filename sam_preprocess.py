@@ -5,9 +5,15 @@ import argparse
 import numpy as np
 from utils.sam_utils import create, seed_everything, save_gpt_input
 
-def sam_image(mask_generator, base_path):
+def sam_image(mask_generator, base_path, case_name: str = ""):
+    seg_map_vis = None
     # Process each dataset
-    for dataset_id in os.listdir(base_path):
+    all_cases = os.listdir(base_path)
+    if case_name:
+        # Only process one case (keeps original all-cases behavior available)
+        all_cases = [case_name]
+
+    for dataset_id in all_cases:
         dataset_path = os.path.join(base_path, dataset_id)
         img_folder = os.path.join(dataset_path, 'images')
 
@@ -56,6 +62,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description = "Part-level Segmentation using SAM")
     parser.add_argument('--dataset_path', type=str, default="gp_cases_dirs")
+    parser.add_argument('--case_name', type=str, default="", help="If set, only process this subfolder under dataset_path")
     parser.add_argument('--sam_ckpt_path', type=str, default="./sam_vit_h_4b8939.pth")
     parser.add_argument('--model_type', type=str, default="vit_h", help="vit_h, vit_b, sam2")
     parser.add_argument('--model_cfg', type=str, default="sam2_hiera_l.yaml", help="Config for SAM2")
@@ -121,7 +128,19 @@ if __name__ == '__main__':
             min_mask_region_area=300,
         )
 
-    sam_image(mask_generator, base_path)
-    save_gpt_input(base_path)
+    # IMPORTANT:
+    # Do NOT rewrite base_path to base_path/case_name here.
+    # That would make sam_image() look for <case>/<case>/images (e.g. lego_3dgs/lego_3dgs/images) and do nothing.
+    # Single-case behavior is implemented by filtering inside sam_image() and save_gpt_input().
+    #
+    # if args.case_name:
+    #     base_path = os.path.join(base_path, args.case_name)
+
+    # Previous attempt (do not use):
+    # if args.case_name:
+    #     base_path = os.path.join(base_path, args.case_name)
+
+    sam_image(mask_generator, base_path, case_name=args.case_name)
+    save_gpt_input(base_path, case_name=args.case_name)
 
     

@@ -1,37 +1,10 @@
 
 
-<div align="center">
 
 
 # GaussianProperty: Integrating Physical Properties to 3D Gaussians with LMMs
-Accepted to ICCV2025
-<div style="display: grid; place-items: center;">
-<img src="assets/logo.png" width="50%" alt="Logo">
-</div>
 
-
-<a href="https://Gaussian-Property.github.io"><img src="https://img.shields.io/badge/Project_Page-Online-EA3A97"></a>
-<a href="https://arxiv.org/abs/2412.11258"><img src="https://img.shields.io/badge/ArXiv-2412.11258-brightgreen"></a> 
-<a href="http://218.23.122.14:61019/"><img src="https://img.shields.io/badge/Gradio-demo-red"></a> 
-
-
-
-</div>
-
-
-Official implementation of GaussianProperty: Integrating Physical Properties to 3D Gaussians with LMMs.
-
-<div style="display: grid; place-items: center;">
-<img src="assets/overview.png" width="100%" alt="Framework">
-</div>
-
-# 🚩 Features
-- [✅] GaussianProperty has been accepted to ICCV 2025.
-- [✅] Release physical property prediction code.
-- [✅] Gradio online demo available. Try it at [demo](http://218.23.122.14:61019/) link.
-- [TODO] Release physical-based simulation models and configurations.
-
-# ⚙️ Dependencies and Installation
+#  Dependencies and Installation
 
 We recommend using `Python>=3.10`, `PyTorch>=2.1.0`, and `CUDA>=12.1`.
 ```bash
@@ -49,95 +22,164 @@ pip install openai
 pip install gradio
 ```
 
-# 💫 Run
 
-## Remove Background(Optional) and Oganize the Data 
-
-We provide sample data in the `gp_cases` folder for testing. To test with your own data, simply organize it in the same format.
-```bash
-python folder_oganizer.py --folder_path gp_cases
-```
-## Part-level Segmentation using SAM
-First, download the checkpoints of SAM from [here](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth), then preprocess the data using SAM:
+# 🧱 3D Reconstruction + Property Lifting
 
 
-```bash
-python sam_preprocess.py  
-```
-## Physical Property Prediction using LMMS
-you can choose between GPT-4V or Qwen-VL-MAX by adding the `--vlm gpt` or `--vlm qwen` flag. Make sure to update your `api_key` in `utils/vim_utils.py` before running:
-```bash
-python vlm_predict.py
-```
 
-## Visualize Material Segmentation Result
-To visualize the material segmentation result, run:
-```bash
-python visualize_material_segmentation.py
-```
+## Prerequisites
+- Multi-view images under `gp_cases_dirs/<case>/images/` (e.g. `001.png`, `002.png`, ...)
+- Run segmentation + VLM first (generates `seg/*_s.npy` and `<case>.txt`)
+- Install COLMAP (ensure `colmap` is on PATH)
+- 3D Gaussian Splatting training code is not vendored here. Use an external checkout (e.g. graphdeco-inria/gaussian-splatting) and point this repo to it.
 
-# 💻 Gradio Demo
-
-To run the Gradio demo, execute the following command and access the demo in your local web browser:
+## Run: COLMAP → 3DGS → Lift properties
+Run inside your conda env (you mentioned `gp_sam2`):
 
 ```bash
-python app.py
-```
-![image](assets/gradio.jpg)
+# 1) segmentation + gpt_input
+python sam_preprocess.py --dataset_path gp_cases_dirs
 
-# 📚 Citation
+# 2) VLM labeling
+python vlm_predict.py --dataset_path gp_cases_dirs --vlm qwen
 
-If you find this project helpful in your research or applications, please cite it as follows:
-
-```BibTeX
-@article{xu2024gaussianproperty,
-  title={GaussianProperty: Integrating Physical Properties to 3D Gaussians with LMMs},
-  author={Xinli Xu and Wenhang Ge and Dicong Qiu and ZhiFei Chen and Dongyu Yan and Zhuoyun Liu and Haoyu Zhao and Hanfeng Zhao and Shunsi Zhang and Junwei Liang and Ying-Cong Chen},
-  journal={arXiv preprint arXiv:2412.11258},
-  year={2024}
-}
+# 3) reconstruct + lift (example case)
+python reconstruction/pipeline.py \
+  --case_dir gp_cases_dirs/doll \
+  --gaussian_splatting_repo <PATH_TO_YOUR_GAUSSIAN_SPLATTING_REPO>
 ```
 
-# 🤗 Acknowledgements
+### Note: 3DGS requires undistorted COLMAP cameras
 
-We thank the authors of the following projects for their excellent contributions to our project!
+The official `graphdeco-inria/gaussian-splatting` loader only supports **undistorted** COLMAP datasets with camera models **PINHOLE** or **SIMPLE_PINHOLE**.
+If your COLMAP model uses distortion (e.g. `SIMPLE_RADIAL`), undistort first:
 
-- [NeRF2Physics](https://github.com/ajzhai/NeRF2Physics)
-- [PhysGaussian](https://github.com/XPandora/PhysGaussian)
-- [LangSplat](https://github.com/minghanqin/LangSplat)
+- Script: [reconstruction/undistort_for_3dgs.py](reconstruction/undistort_for_3dgs.py)
+- Example (lego): [scripts/undistort_lego_for_3dgs.cmd](scripts/undistort_lego_for_3dgs.cmd)
 
+## End-to-end (Windows) quickstart: NeRF Synthetic `lego` → 3DGS → lift + colorize
 
+This is the exact command sequence we’ve been running in this workspace.
 
-# env
+### 0) Environments
 
-# 1. Create new env
-```
-conda create -n sam2 python=3.10 -y
-conda activate sam2
-```
+We use two conda envs:
 
-# 2. Install PyTorch (CUDA 11.8 or 12.1 recommended)
-```
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-```
+- `gp_sam2`: SAM2 segmentation + property lifting scripts
+- `gs_cuda12`: official 3DGS training + CUDA extensions
 
-# 3. Install SAM 2
-```
-pip install git+https://github.com/facebookresearch/sam2.git
-```
-download sam2 model https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt
+### 1) Download a multi-view dataset (NeRF Synthetic)
 
-# 4. Other
-```
-pip install opencv-python matplotlib rembg gradio tqdm openai
+This downloads NeRF Synthetic example data and copies a split into `gp_cases_dirs/<scene>/images/*.png`.
+
+```bash
+conda activate gp_sam2
+python datasets/prepare_nerf_synthetic.py --scene lego --split train --out_root gp_cases_dirs --stride 1 --max_images 60 --force
 ```
 
-# new command
-use sam2
+### 2) COLMAP SfM (distorted model)
+
+```bash
+# Requires COLMAP installed and `colmap` on PATH
+python reconstruction/run_colmap.py --images gp_cases_dirs/lego/images --workspace gp_cases_dirs/lego
 ```
-python sam_preprocess.py --model_type sam2 --sam_ckpt_path sam2_hiera_large.pt --model_cfg sam2_hiera_l.yaml
+
+### 3) Undistort for 3DGS (PINHOLE cameras)
+
+```bash
+# Run from an env that can execute our Python scripts (e.g., gp_sam2)
+conda activate gp_sam2
+
+# Writes gp_cases_dirs/lego_3dgs with undistorted images + sparse/0
+scripts/undistort_lego_for_3dgs.cmd
+
+# Convert undistorted model to TXT (needed by lifting)
+colmap model_converter --input_path gp_cases_dirs/lego_3dgs/sparse/0 --output_path gp_cases_dirs/lego_3dgs/sparse_txt --output_type TXT
 ```
-use default
+
+### 4) Build official 3DGS CUDA submodules (Windows)
+
+We vendor the official repo under `external/gaussian-splatting/`.
+
+```bash
+conda activate gs_cuda12
+scripts/build_gs_submodules.cmd
 ```
-python sam_preprocess.py --model_type vit_h --sam_ckpt_path sam_vit_h_4b8939.pth
+
+> If your Visual Studio / CUDA / conda paths differ, edit the variables at the top of `scripts/build_gs_submodules.cmd`.
+
+### 5) Train 3DGS (7000 iters)
+
+```bash
+scripts/train_3dgs_lego_7000.cmd
 ```
+
+Output Gaussians will be at:
+- `Results_3dgs_lego_7000_cmd/point_cloud/iteration_7000/point_cloud.ply`
+
+### 6) SAM2 segmentation on the UNDISTORTED images
+
+```bash
+conda activate gp_sam2
+python sam_preprocess.py --dataset_path gp_cases_dirs --case_name lego_3dgs --model_type sam2 --sam_ckpt_path sam2_hiera_large.pt --model_cfg sam2_hiera_l.yaml
+```
+
+This creates:
+- `gp_cases_dirs/lego_3dgs/seg/*_s.npy`
+- `gp_cases_dirs/lego_3dgs/gpt_input/<view>/<part>.png`
+
+### 7) Labels (choose ONE)
+
+**Option A (real VLM):**
+
+```bash
+python vlm_predict.py --dataset_path gp_cases_dirs --case_name lego_3dgs --vlm qwen
+```
+
+**Option B (offline dummy labels for debugging):**
+
+```bash
+python reconstruction/generate_dummy_vlm_txt.py --case_dir gp_cases_dirs/lego_3dgs
+```
+
+### 8) Lift properties onto Gaussians (voting)
+
+Run as a module from repo root so imports resolve:
+
+```bash
+python -m reconstruction.lift_properties_to_gaussians \
+  --case_dir gp_cases_dirs/lego_3dgs \
+  --colmap_model_txt gp_cases_dirs/lego_3dgs/sparse_txt \
+  --gaussians_ply Results_3dgs_lego_7000_cmd/point_cloud/iteration_7000/point_cloud.ply \
+  --out_ply Results_3dgs_lego_7000_cmd/point_cloud/iteration_7000/point_cloud_with_material_id.ply
+```
+
+### 9) Colorize the labeled Gaussians for viewing
+
+```bash
+python -m reconstruction.visualize_ply_materials \
+  --ply Results_3dgs_lego_7000_cmd/point_cloud/iteration_7000/point_cloud_with_material_id.ply \
+  --out_png Results_3dgs_lego_7000_cmd/point_cloud/iteration_7000/point_cloud_with_material_id.png \
+  --out_colored_ply Results_3dgs_lego_7000_cmd/point_cloud/iteration_7000/point_cloud_with_material_id_colored.ply
+```
+
+The resulting colored PLY can be opened in CloudCompare/MeshLab:
+- `Results_3dgs_lego_7000_cmd/point_cloud/iteration_7000/point_cloud_with_material_id_colored.ply`
+
+Outputs go to `gp_cases_dirs/<case>/recon/` by default, including:
+- `gaussians_with_material_id.ply`
+- `gaussians_with_material_id.materials.txt` (material_id → material name)
+
+## Run: Lift only (if you already have 3DGS + COLMAP)
+```bash
+python reconstruction/lift_properties_to_gaussians.py \
+  --case_dir gp_cases_dirs/doll \
+  --colmap_model_txt <COLMAP_TXT_MODEL_DIR> \
+  --gaussians_ply <POINT_CLOUD_PLY> \
+  --out_ply gp_cases_dirs/doll/recon/gaussians_with_material_id.ply
+```
+
+
+
+
+

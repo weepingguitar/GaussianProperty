@@ -346,13 +346,23 @@ def sam_encoder(image, alpha, save_path, mask_generator):
     return Image.fromarray(seg_map_vis)
 
 
-def save_gpt_input(base_path):
+def save_gpt_input(base_path, case_name: str = ""):
     all_cases = os.listdir(base_path)
+    if case_name:
+        all_cases = [case_name]
+
     for path in all_cases:
         case_name = os.path.join(base_path, path)
 
         image_base = f"{case_name}/images"
-        number_view = 1
+        # NOTE: original code assumes a single view:
+        # number_view = 1
+        # For 3D reconstruction + multi-view voting, we must support multi-view inputs.
+        # We interpret each image in `images/` as a view.
+        if not os.path.exists(image_base):
+            continue
+        image_files = sorted([f for f in os.listdir(image_base) if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
+        number_view = len(image_files)
         feature_base = f"{case_name}/seg"
         vis_seg_base = f"{case_name}/vis_seg"
 
@@ -363,9 +373,19 @@ def save_gpt_input(base_path):
             cur_gpt_path = os.path.join(base_gpt_test_path, str(i).zfill(2))
             os.makedirs(cur_gpt_path, exist_ok=True)
 
-            img_path = os.path.join(image_base, str(i).zfill(3) + '.png')
-            s_path = os.path.join(feature_base, str(i).zfill(3) + '_s.npy')
-            seg_path = os.path.join(vis_seg_base, str(i).zfill(3) + '/part')
+            # Map the i-th view to its filename (supports arbitrary naming as long as it is numeric-sortable).
+            # Fall back to the old convention (001.png) if the file list is empty.
+            if number_view > 0:
+                view_stem = os.path.splitext(image_files[i - 1])[0]
+            else:
+                view_stem = str(i).zfill(3)
+
+            img_path = os.path.join(image_base, f"{view_stem}.png")
+            if not os.path.exists(img_path):
+                # Try original extension if not PNG.
+                img_path = os.path.join(image_base, image_files[i - 1])
+            s_path = os.path.join(feature_base, f"{view_stem}_s.npy")
+            seg_path = os.path.join(vis_seg_base, f"{view_stem}/part")
             ss = np.load(s_path)
             rgba_image = cv2.imread(img_path)
             image = cv2.cvtColor(rgba_image, cv2.COLOR_BGR2RGB)
